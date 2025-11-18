@@ -11,11 +11,13 @@ class CorrelationUncertainty:
     - Composite (MC + bootstrap) sampling
     """
 
-    def __init__(self, x, y, xerr=None, yerr=None):
+    def __init__(self, x, y, xerr=None, yerr=None, random_state=None, nan_policy="propagate"):
         self.x = np.asarray(x)
         self.y = np.asarray(y)
         self.xerr = xerr
         self.yerr = yerr
+        self.nan_policy = nan_policy
+        self.rng = np.random.default_rng(random_state)
         self._validate_inputs()
 
     def _validate_inputs(self):
@@ -56,17 +58,16 @@ class CorrelationUncertainty:
         sigma_left = np.asarray(sigma_left)
         sigma_right = np.asarray(sigma_right)
 
-        zero_mask = (sigma_left == 0) & (sigma_right == 0)
-        if np.all(zero_mask):
-            return np.full(size, mu)
+        # Safe elementwise division
+        denom = sigma_left + sigma_right
+        p_left = np.divide(sigma_left, denom, out=np.full_like(denom, 0.5, dtype=float), where=denom > 0)
 
-        rng = np.random.default_rng()
-        u = rng.uniform(0, 1, size=size)
+        u = self.rng.uniform(0, 1, size=size)
 
         return np.where(
-            u < (sigma_left / (sigma_left + sigma_right)),
-            rng.normal(loc=mu, scale=sigma_left, size=size),
-            rng.normal(loc=mu, scale=sigma_right, size=size),
+            u < p_left,
+            self.rng.normal(loc=mu, scale=sigma_left, size=size),
+            self.rng.normal(loc=mu, scale=sigma_right, size=size),
         )
 
     def prepare_samples_mc(self, n, indices=None):
@@ -101,7 +102,7 @@ class CorrelationUncertainty:
         pvals = np.empty(n)
 
         for i in range(n):
-            rhos[i], pvals[i] = spearmanr(x_samples[i], y_samples[i])
+            rhos[i], pvals[i] = spearmanr(x_samples[i], y_samples[i], nan_policy=self.nan_policy)
 
         return rhos, pvals
 
@@ -109,8 +110,7 @@ class CorrelationUncertainty:
         """
         Standard bootstrap sampling of (x, y) pairs.
         """
-        rng = np.random.default_rng()
-        indices = rng.integers(0, len(self.x), size=(n, len(self.x)))
+        indices = self.rng.integers(0, len(self.x), size=(n, len(self.x)))
 
         rhos = np.empty(n)
         pvals = np.empty(n)
@@ -119,6 +119,7 @@ class CorrelationUncertainty:
             rhos[i], pvals[i] = spearmanr(
                 self.x[indices[i]],
                 self.y[indices[i]],
+                nan_policy=self.nan_policy,
             )
 
         return rhos, pvals
@@ -129,8 +130,7 @@ class CorrelationUncertainty:
         bootstrap indices + Monte Carlo perturbation for each bootstrap sample.
         """
 
-        rng = np.random.default_rng()
-        indices = rng.integers(0, len(self.x), size=(n, len(self.x)))
+        indices = self.rng.integers(0, len(self.x), size=(n, len(self.x)))
 
         rhos = np.empty(n)
         pvals = np.empty(n)
@@ -139,6 +139,6 @@ class CorrelationUncertainty:
             x_s, y_s = self.prepare_samples_mc(1, indices=idx)
             x_s = x_s.flatten()
             y_s = y_s.flatten()
-            rhos[i], pvals[i] = spearmanr(x_s, y_s)
+            rhos[i], pvals[i] = spearmanr(x_s, y_s, nan_policy=self.nan_policy)
 
         return rhos, pvals
