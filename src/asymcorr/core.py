@@ -208,8 +208,7 @@ class CorrelationUncertainty:
         if pval_median < 0.001:
             pval_str = f"P-value median: {pval_median:.2e}"
         else:
+            pval_str = f"P-value median: {pval_median:.3f}"
         signif_frac = f'Significant fraction (p < 0.05): {summary["significant_fraction"]:.2%}'
 
         print(rho_median, cis, pval_str, signif_frac, sep="\n")
-
-            pval_str = f"P-value median: {pval_median:.3f}"
