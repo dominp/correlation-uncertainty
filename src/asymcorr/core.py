@@ -22,32 +22,41 @@ class CorrelationUncertainty:
 
     def _validate_inputs(self):
         """Validate shapes and convert errors to 2xN arrays."""
-
         self.x = np.asarray(self.x)
         self.y = np.asarray(self.y)
 
+        if len(self.x) != len(self.y) or len(self.x) == 0:
+            raise ValueError("x and y must have the same non-zero length")
+        
         self.xerr = self._validate_error(self.xerr, len(self.x))
         self.yerr = self._validate_error(self.yerr, len(self.y))
 
-        if len(self.x) != len(self.y):
-            raise ValueError("x and y must have the same length")
+        if self.nan_policy not in ["propagate", "raise", "omit"]:
+            raise ValueError("nan_policy must be one of 'propagate', 'raise', or 'omit'")
+        if self.nan_policy == "raise" and (np.isnan(self.x).any() or np.isnan(self.y).any()):
+            raise ValueError("Input data contains NaNs, but nan_policy is set to 'raise'")
 
-        if self.xerr.shape != (2, len(self.x)):
-            raise ValueError("xerr must have shape (2, len(x))")
-
-        if self.yerr.shape != (2, len(self.y)):
-            raise ValueError("yerr must have shape (2, len(y))")
 
     def _validate_error(self, err, n):
-        """Convert error input into a (2, n) array."""
         if err is None:
             return np.zeros((2, n))
 
         err = np.asarray(err)
-        if err.ndim == 1:  # symmetric error provided
+        if err.ndim == 1:
+            if len(err) != n:
+                raise ValueError("Error array length must match data length")
+            if np.any(err < 0):
+                raise ValueError("Errors must be non-negative")
             return np.vstack([err, err])
-
-        return err
+    
+        elif err.ndim ==2:
+            if err.shape != (2, n):
+                raise ValueError("Asymmetric error array must have shape (2, len(data))")
+            if np.any(err < 0):
+                raise ValueError("Errors must be non-negative")
+            return err
+        else:
+            raise ValueError("Error array must be 1D or 2D")
 
     def split_normal(self, mu, sigma_left, sigma_right, size=1):
         """
@@ -199,7 +208,8 @@ class CorrelationUncertainty:
         if pval_median < 0.001:
             pval_str = f"P-value median: {pval_median:.2e}"
         else:
-            pval_str = f"P-value median: {pval_median:.3f}"
         signif_frac = f'Significant fraction (p < 0.05): {summary["significant_fraction"]:.2%}'
 
         print(rho_median, cis, pval_str, signif_frac, sep="\n")
+
+            pval_str = f"P-value median: {pval_median:.3f}"
